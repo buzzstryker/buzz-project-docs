@@ -649,6 +649,55 @@ Set this up once per Vercel project. **Lesson learned the hard way (Windex, May 
 
 **Fifth lesson, same day (Windex, May 2026):** the next attempt swapped the SHA-targeted fetch for `git fetch --unshallow --quiet 2>/dev/null || true`, on the theory that ref-based fetch (which the initial clone proved Vercel's token can do) would succeed where SHA-targeted fetch failed. It didn't. windex-admin errored with the same `fatal: bad object <sha>` and a total ignoreCommand runtime of ~25ms — way too fast for a real network unshallow. Either `--unshallow` errored instantly or no-op'd silently; the `2>/dev/null` was still in place hiding the actual reason. **Reverted both `vercel.json` files back to the original `git diff --quiet HEAD^ HEAD -- .` form** (the version documented at the top of this section). The multi-commit-skip bug remains as a known limitation per the note above. Re-attempt requires out-of-prod test infrastructure (staging Vercel project) so iteration doesn't keep breaking real builds, and the next diagnostic should remove `2>/dev/null` to read Vercel's actual stderr.
 
+### 4.1b — Vercel Pro defaults that break new project setup
+
+When importing a new GitHub repo to Vercel under a Pro team, three
+defaults will make the first deploy fail or appear broken:
+
+**1. Vercel Authentication = ON ("Standard Protection")**
+- Effect: production URL returns plain 404 to any visitor not logged
+  into Vercel and a member of the team. Even the dashboard "Visit"
+  button leads to 404.
+- Build logs show successful deploy with a real route table — this is
+  not a build problem.
+- Fix: Settings → Deployment Protection → toggle "Require Log In" OFF
+  → **click Save**. The toggle is pending until Save is clicked; the
+  UI does not warn you about this.
+- For projects with their own app-level auth (Supabase OTP, etc.),
+  Vercel Authentication is redundant — keep it off.
+
+**2. Node.js version defaults to the newest LTS (currently 24.x)**
+- Effect: builds succeed but can silently produce broken runtime
+  artifacts on Next.js 15+ in some configurations. Hard to diagnose
+  because logs claim success.
+- Fix: Settings → Build and Deployment → Node.js Version → pin to
+  20.x (or 22.x). Trigger a redeploy to apply.
+
+**3. Empty-repo first import can corrupt the project's internal slug**
+- Effect: per-deployment URLs come out with the wrong project name
+  baked in (e.g. `irrigation-monitor-m8b4ogvi5-buzzstryker.vercel.app`
+  instead of `irrigation-monitor-app-m8b4ogvi5-buzzstryker.vercel.app`).
+  Production URL 404s permanently. Cannot be fixed via settings;
+  the corruption is deep in Vercel's project record.
+- Symptom to watch for: in Deployment Details, the third domain
+  alias in the list (the per-deployment hash URL) has the wrong
+  project name.
+- Fix: delete the Vercel project and re-import AFTER code has been
+  pushed to the GitHub repo. The empty-repo import path is what
+  triggers the bug; importing a repo with code present produces a
+  clean project record.
+
+**Preferred sequence for new projects:**
+1. Create GitHub repo (empty)
+2. Clone locally, scaffold the project, push to main
+3. ONLY THEN import to Vercel from a non-empty repo
+4. Immediately after first deploy: turn off Vercel Authentication,
+   pin Node.js to 20.x, trigger redeploy
+
+This avoids all three issues above. The opposite sequence (create
+Vercel project against empty repo, then push code) is the path that
+caused 2+ hours of debugging in the irrigation-monitor-app session.
+
 ### 4.2 Connect GoDaddy Domain to Vercel
 - Done manually in GoDaddy DNS settings
 - Add Vercel's A record and CNAME to GoDaddy

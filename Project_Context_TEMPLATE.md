@@ -17,6 +17,23 @@
 - **Auth:** [e.g. Supabase OTP, none]
 - **Other:** [e.g. third-party APIs, integrations]
 
+**Next.js scaffold version pinning**
+
+Do NOT use `npx create-next-app@latest` for new projects.
+
+`@latest` pulls bleeding-edge Next.js (currently 16.x) and
+bleeding-edge React (19.x), which may not be compatible with our
+other dependencies (e.g. next-pwa, which has not been updated for
+Next 15+, let alone 16).
+
+Use an explicit version:
+
+    npx create-next-app@15 ...
+
+The currently-blessed Next.js major for new projects is **15.x**.
+Update this number deliberately when a new major has been validated
+end-to-end with our stack (PWA, Supabase, Vercel runtime).
+
 ## Repo structure
 
 - **GitHub:** [repo URL]
@@ -37,6 +54,20 @@
 - **Production:** [URL]
 - **Supabase project ID:** [if applicable]
 - **Vercel project name:** [if applicable]
+
+---
+
+## Initial setup checklist
+
+- [ ] **Push initial code to GitHub BEFORE creating Vercel project.**
+  Importing an empty repo into Vercel can corrupt the project's
+  internal slug. See Procedure §4.1b.
+- [ ] **Disable Vercel Authentication** on the new project:
+  Settings → Deployment Protection → toggle "Require Log In" OFF →
+  click Save. Vercel defaults this ON for Pro teams. See §4.1b.
+- [ ] **Pin Node.js version to 20.x** in Settings → Build and
+  Deployment. Vercel defaults to the newest LTS (currently 24.x),
+  which has known Next.js 15+ runtime compatibility issues. See §4.1b.
 
 ---
 
