@@ -42,7 +42,9 @@
 
 ## Working agreement with Claude
 
-**All Claude Code prompts drafted in this project must enforce the following sections of `Buzz_Project_Development_Procedure.md` (kept at `C:\Users\buzzs\OneDrive\Desktop\Projects\Buzz_Project_Development_Procedure.md`):**
+Procedure doc + template live at https://github.com/buzzstryker/buzz-project-docs (cloned locally at `C:\Users\buzzs\repos\buzz-project-docs\`). Pull before any session that touches auth, deploys, Edge Functions, or other procedure-governed areas.
+
+**All Claude Code prompts drafted in this project must enforce the following sections of `Buzz_Project_Development_Procedure.md`:**
 
 - **3.2a — Working-tree hygiene.** Every Claude Code session ends with a clean `git status`. No "I'll commit this later." Backend deploys (Supabase migrations, Edge Functions) and the corresponding git commits are paired operations.
 - **3.2b — Backend deploys are git operations.** Any `npx supabase db query`, `npx supabase functions deploy`, or `npx vercel env add` must be followed by a git commit of the source in the same session.
