@@ -68,6 +68,11 @@ end-to-end with our stack (PWA, Supabase, Vercel runtime).
 - [ ] **Pin Node.js version to 20.x** in Settings → Build and
   Deployment. Vercel defaults to the newest LTS (currently 24.x),
   which has known Next.js 15+ runtime compatibility issues. See §4.1b.
+- [ ] **PWA auto-update (if shipping as an installed PWA):** build-SHA
+  stamp visible in-app + auto-updating service worker installed. See
+  §4.1c and `PWA_Auto_Update_Pattern.md`. Without it, installed PWAs
+  serve stale cached bundles forever and every deploy needs a manual
+  re-add.
 
 ---
 

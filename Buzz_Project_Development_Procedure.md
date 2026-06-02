@@ -698,6 +698,22 @@ This avoids all three issues above. The opposite sequence (create
 Vercel project against empty repo, then push code) is the path that
 caused 2+ hours of debugging in the irrigation-monitor-app session.
 
+### 4.1c Auto-updating PWA — service worker + build-SHA stamp
+
+**Standing procedure: every Buzz project that ships as an installed PWA includes, from project setup, (1) a build-SHA stamp visible in-app and (2) an auto-updating service worker** (network-first app shell, registered as `/sw.js?v=<BUILD_ID>`, with a documented kill switch). Not optional, not a later add-on — wire it in at setup.
+
+**Why (the failure mode this prevents):** an installed PWA caches its JS bundle. Without a self-updating service worker, the OS WebView serves that stale bundle **indefinitely** — every deploy becomes a manual delete/re-add for every installed user, and client-side bugs become undebuggable because you can't tell new code from a cached bundle (Windex, 2026-06, burned an afternoon on a "layout bug" that was really a stale bundle masking the fix). The build-SHA stamp makes "which bundle is this device running?" a two-second glance instead of a guess.
+
+**The non-negotiable: FRESH CODE FIRST, offline as a bonus.** A cache-first service worker on the HTML or bundle recreates the exact staleness you're fixing. Network-first on the shell + cache-by-hashed-URL for assets is the whole pattern.
+
+**Implementation: see `PWA_Auto_Update_Pattern.md`** — it has the canonical `sw.js` + registration code, the invariant core vs. the three per-project adapters (static-asset glob, build-ID env var, "safe to reload" hook), the kill-switch deploy procedure, and the verification ritual (ship → one final manual re-add to plant the SW → push a trivial change → confirm the in-app SHA flips with no re-add).
+
+**Bootstrapping caveat:** the first SW can't update an app that has no SW yet, so shipping this needs **one** final manual delete/re-add. Every deploy after that is automatic.
+
+**Related caveat (same doc):** iOS auto-zooms on focusing an input with `font-size < 16px`, shrinking the layout viewport and shoving left-anchored UI off-screen — it masquerades as a layout bug. Fix: every focusable input is `font-size >= 16px`.
+
+**Reference implementation:** Windex (`windex-expo`) — `public/sw.js`, `lib/pwaUpdate.ts`, web-guarded registration in `app/_layout.tsx`, `EXPO_PUBLIC_BUILD_ID` via `VERCEL_GIT_COMMIT_SHA` in `vercel.json`, SHA stamped in the drawer footer.
+
 ### 4.2 Connect GoDaddy Domain to Vercel
 - Done manually in GoDaddy DNS settings
 - Add Vercel's A record and CNAME to GoDaddy
@@ -853,5 +869,5 @@ git push
 
 ---
 
-*Last updated: May 21, 2026*
+*Last updated: June 1, 2026*
 *To update: reopen this Claude project and ask Claude to revise*
