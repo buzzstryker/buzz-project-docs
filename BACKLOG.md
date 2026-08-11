@@ -186,7 +186,17 @@ it.
 ## Windex: recovering a squatted address confirms the squatter's account
 
 **Observed:** Windex, 2026-08-11, during the Stage 3 squat rehearsal for
-migration 056. **Recommendation: disable the password grant project-wide.**
+migration 056. **Status: ACCEPTED RISK — not scheduled.**
+
+### Why it is accepted rather than fixed
+
+Residual impact is **read access to a private golf leaderboard**. No money moves
+through Windex, there is no sensitive PII, member addresses are not published,
+and there have been **zero occurrences** in production. The cheap fix turned out
+not to exist (below), so the remaining options all cost real work for that
+payoff. Revisit if the threat model changes — if Windex ever holds payment
+details or personal data beyond names, scores and email addresses, this stops
+being acceptable.
 
 ### The finding
 
@@ -210,34 +220,43 @@ described as "self-healing" during development. That was wrong and the word has
 been removed from the code. It **recovers the address**; it does not clean up
 the account. The row ends up owned by the right person *and* by the squatter.
 
-### Recommended fix: disable the password grant project-wide
+### The cheap fix does not exist — and my first recommendation was wrong
 
-Windex has **no user-facing password flow anywhere**. `login.tsx` only ever
-calls `signInWithOtp` / `verifyOtp`; `signInWithPassword` is exposed on the auth
-context but never invoked by any screen. The password endpoint exists purely as
-attack surface.
+**This entry originally recommended disabling the password grant project-wide.
+That recommendation was wrong on its premise and has been withdrawn.** It said
+Windex has "no user-facing password flow anywhere." I had checked the player app
+only. The audit that followed found:
 
-This is a **config change, not code** — the same shape as the
-`mailer_autoconfirm` fix, and it needs the same discipline:
+- `windex-admin/src/pages/Login.tsx:39` posts to
+  `/auth/v1/token?grant_type=password`, and **that is admin's default login
+  mode**. Disabling the provider would have locked the only admin out.
+- Three import scripts also use `signInWithPassword`
+  (`sync-glide-members.mjs:50`, `sync-glide-structure.mjs:53`,
+  `run-glide-import.mjs:33`), as do three test suites.
+- Supabase exposes **no password-grant toggle** on the config API at all. The
+  nearest lever, `external_email_enabled`, disables the entire email provider —
+  OTP included — so it is not the lever.
 
-1. Audit what actually uses the password grant before flipping it — including
-   the admin app's auth path, which must be confirmed unaffected.
-2. Read the setting back **by value**, and remember that a 200 plus a matching
-   read-back proves storage, not propagation. Verify with a real sign-in
-   afterwards, not just a GET.
+The lesson generalises: **an audit scoped to one app is not an audit.** "No
+caller anywhere" was asserted from a single codebase in a three-codebase repo.
 
-### Rejected alternatives, and why
+### If this ever needs fixing: migrate admin to OTP first
 
-- **Delete and recreate the unconfirmed account** in the invite branch. Destroys
-  an auth record on suspicion. An unconfirmed account is not necessarily hostile
-  — it is just as likely a legitimate user who abandoned onboarding halfway.
-- **Clear `encrypted_password` when linking on confirmation.** Mutates someone
-  else's auth record from a path that runs during ordinary sign-in. Too much
-  blast radius for a trigger on the auth critical path, and it silently breaks
-  any future legitimate password use.
+**Option 1 — the answer.** Migrate `windex-admin` to OTP, then disable the
+grant. Roughly two users, and it reuses the single-step code-entry flow already
+proven in the player app. It also removes a standing oddity: admin auth is
+password-based while the product is OTP-only.
 
-Both treat the symptom on a hot path. Disabling the grant removes the capability
-outright, in one place, reversibly.
+Considered and not chosen:
+
+- **Option 2 — `hook_password_verification_attempt`.** A GoTrue hook that can
+  reject password attempts per user, e.g. allow super-admins and refuse everyone
+  else. Currently disabled and needs an endpoint to exist, so it trades a config
+  change for a service to build and operate.
+- **Option 3 — clear `encrypted_password` when linking on confirmation.**
+  Mutates someone else's auth record from a path that runs during ordinary
+  sign-in. Too much blast radius for a trigger on the auth critical path, and it
+  silently breaks any future legitimate password use.
 
 ---
 
