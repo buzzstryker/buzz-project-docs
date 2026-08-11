@@ -183,6 +183,64 @@ it.
 
 ---
 
+## Windex: recovering a squatted address confirms the squatter's account
+
+**Observed:** Windex, 2026-08-11, during the Stage 3 squat rehearsal for
+migration 056. **Recommendation: disable the password grant project-wide.**
+
+### The finding
+
+A stranger can `POST /auth/v1/signup` with someone else's email and the public
+anon key, supplying **a password of their choosing**. Migration 056 stops that
+unconfirmed account from claiming the victim's pending player row, which was the
+reported harm — that part holds.
+
+Recovery works by mailing a sign-in code to the address. It reaches the real
+owner's inbox, they redeem it, and the row links to them. But redeeming sets
+`email_confirmed_at` on **the squatter's account** — the same row, now confirmed
+— which makes the squatter's password live. They could then use the public
+password grant to hold a genuine session as that player.
+
+The credential is inert only while the account stays unconfirmed
+(`mailer_allow_unverified_email_sign_ins = false`). Recovery is exactly the act
+that arms it.
+
+**Language correction, recorded deliberately:** this branch was repeatedly
+described as "self-healing" during development. That was wrong and the word has
+been removed from the code. It **recovers the address**; it does not clean up
+the account. The row ends up owned by the right person *and* by the squatter.
+
+### Recommended fix: disable the password grant project-wide
+
+Windex has **no user-facing password flow anywhere**. `login.tsx` only ever
+calls `signInWithOtp` / `verifyOtp`; `signInWithPassword` is exposed on the auth
+context but never invoked by any screen. The password endpoint exists purely as
+attack surface.
+
+This is a **config change, not code** — the same shape as the
+`mailer_autoconfirm` fix, and it needs the same discipline:
+
+1. Audit what actually uses the password grant before flipping it — including
+   the admin app's auth path, which must be confirmed unaffected.
+2. Read the setting back **by value**, and remember that a 200 plus a matching
+   read-back proves storage, not propagation. Verify with a real sign-in
+   afterwards, not just a GET.
+
+### Rejected alternatives, and why
+
+- **Delete and recreate the unconfirmed account** in the invite branch. Destroys
+  an auth record on suspicion. An unconfirmed account is not necessarily hostile
+  — it is just as likely a legitimate user who abandoned onboarding halfway.
+- **Clear `encrypted_password` when linking on confirmation.** Mutates someone
+  else's auth record from a path that runs during ordinary sign-in. Too much
+  blast radius for a trigger on the auth critical path, and it silently breaks
+  any future legitimate password use.
+
+Both treat the symptom on a hot path. Disabling the grant removes the capability
+outright, in one place, reversibly.
+
+---
+
 ## Not yet placed
 
 There is currently **no "silent save" section** in
