@@ -141,6 +141,39 @@ rather than by the cleanup itself.
 
 ---
 
+## A grep that returns nothing is not evidence of absence
+
+**Observed:** Windex, 2026-08-10 and 2026-08-11 — **three times in two days**,
+which is why it is a rule and not a note.
+
+| what I searched | what the filter missed | what it nearly caused |
+|---|---|---|
+| `id LIKE 'ZZWXGATE%'` | a fixture created by the code under test, which mints its own ids | a stray test row left in production, reading as real data |
+| `grep -E "^Error"` on a build log | the real failure; it matched my own aborted-request noise instead | declared a bundle broken that was fine |
+| `grep "superAdmin"` | `isSuperAdmin` — case | **"no auth signal available"**, sending a design the wrong way |
+
+The third is the instructive one. The gate I was looking for was on the very line
+my pattern should have matched; the lowercase `s` hid it, and an empty result
+read as "this surface is not admin-gated." That conclusion would have produced a
+new RPC and a migration to expose a signal that was already available.
+
+**The rule:** when a grep returns nothing and you are about to conclude
+*absence*, first verify the pattern against a string you KNOW is present. If the
+positive control does not match either, the filter is wrong, not the world.
+
+Cheap forms of the control: search a substring you have already seen with your
+own eyes; drop to a shorter, less specific pattern; add `-i`; grep the same term
+in a file you know contains it. Absence claims deserve a positive control the
+way a delete deserves a census assertion — the failure mode is identical, and in
+both cases the thing that was wrong was the filter.
+
+**Corollary:** "no caller anywhere" is a claim about every codebase in the repo.
+Scoping it to one app and reporting it as global is the same error wearing
+different clothes — see the password-grant entry, where exactly that produced a
+recommendation that would have caused an admin lockout.
+
+---
+
 ## Windex: a squatted player row is indistinguishable from a legitimate invite
 
 **Observed:** Windex, 2026-08-11, during the Stage 3 squat rehearsal for
