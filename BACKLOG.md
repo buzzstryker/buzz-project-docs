@@ -141,6 +141,48 @@ rather than by the cleanup itself.
 
 ---
 
+## Windex: a squatted player row is indistinguishable from a legitimate invite
+
+**Observed:** Windex, 2026-08-11, during the Stage 3 squat rehearsal for
+migration 056. **Zero occurrences in production.** Needs its own spec before
+anyone builds it.
+
+Migration 056 stops a stranger's unconfirmed signup from claiming a pending
+player row, and the admin UI now surfaces that row rather than hiding it — a
+strict improvement on the old behaviour, where the row was silently linked, the
+invite button vanished, and `send-invite` 409'd with no explanation.
+
+But the surfaced row reads **"Invited — awaiting first sign-in" with a Resend
+Invite button** — pixel-identical to rows we genuinely invited. Three rows side
+by side, two invited by an admin and one claimed by a stranger, looked the same.
+The row that needs attention hides among the ones that don't.
+
+**Rejected: neutral wording** (e.g. "Account pending"). It stops the UI from
+falsely claiming we invited someone, but every row still looks alike — the
+statement just gets vaguer. It fixes the false claim, not the actual problem,
+which is that the row needing attention is not identifiable.
+
+**The fix: distinguish self-signup from an invite we sent.** The discriminator
+already exists and is the same fingerprint used to triage the original incident:
+
+| origin | `invited_at` | `raw_user_meta_data` |
+|---|---|---|
+| `inviteUserByEmail` (send-invite) | set | Edge-Function `display_name` |
+| `createUser` + `signInWithOtp` (invite-player) | NULL | Edge-Function `display_name` |
+| **stranger self-signup** | **NULL** | **no `display_name`** — GoTrue defaults only |
+
+So "we invited them" is `invited_at IS NOT NULL OR raw_user_meta_data ? 'display_name'`,
+and anything else with an auth account is unclaimed-by-us.
+
+**Open questions for the spec** — the reason this is not a one-line change:
+pill wording; whether it needs a distinct colour rather than reusing the invited
+amber; and whether the admin should be able to act on it directly (dismiss,
+force-unlink, block the address) or only observe it. Exposing the flag also
+needs a migration, since `get_players_auth_status()` does not currently return
+it.
+
+---
+
 ## Not yet placed
 
 There is currently **no "silent save" section** in
