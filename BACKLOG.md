@@ -110,6 +110,37 @@ this generalises it to every layer.
 
 ---
 
+## Clean up test data by identifying attributes, never by id prefix
+
+**Observed:** Windex, 2026-08-11.
+
+A test sweep deleted rows matching `id LIKE 'ZZWXGATE%'` — the prefix used when
+creating fixtures directly. It missed one, because that row had been created by
+the **production code path under test** (an Edge Function), which mints its own
+nanoid and knows nothing about test prefixes. The survivor looked like a real
+player.
+
+It got worse quietly: the row's `user_id` pointed at a test auth user, and the
+FK is `ON DELETE SET NULL`. Deleting the auth user did not orphan the row
+visibly — it **converted it into a pending player**, indistinguishable from the
+54 genuine ones. The census read 85/55 instead of 84/54.
+
+**The rule:** sweep on attributes that identify the data as test data regardless
+of who created it — `display_name`, `email` (plus-addressing is ideal), a marker
+column. Never on the id-generation scheme, because the moment a fixture is
+created *by the system under test* rather than by the test, the prefix is gone.
+
+**Corollary:** end every cleanup with a census assertion against known-good
+totals, not just a "zero rows matching my filter" check. The filter is the thing
+that was wrong; only an independent count catches that. Here `players = 84 AND
+pending = 54` failed while every residue check passed, which is the only reason
+it surfaced.
+
+**Cost:** one nearly-missed 55th pending player, caught by the census assertion
+rather than by the cleanup itself.
+
+---
+
 ## Not yet placed
 
 There is currently **no "silent save" section** in
