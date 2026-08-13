@@ -44,6 +44,7 @@ The fix is two small, always-paired pieces, installed from project setup:
 7. **First-activation-skip** — no spurious reload when the SW is first planted.
 8. A **reload-loop guard**.
 9. Bootstrapping: one final manual re-add plants the SW; everything after auto-updates.
+10. **A resume-time update check** — `registration.update()` when the app returns to the foreground, throttled. Registration runs once at mount; an OS that freezes the app and resumes it from a snapshot never re-runs that mount, so without this an install can hold a stale bundle indefinitely. See *iOS freezes installed PWAs* below.
 
 ## Per-project adapters (MUST be re-specified each project)
 
@@ -205,6 +206,11 @@ let composerBusy = false; // user has unsaved, focused input
 let reloadPending = false;
 let refreshing = false; // a reload is already in flight (in-memory loop guard)
 
+// Resume-time update checks: at most one per minute, so rapid app switching
+// doesn't fire a burst of sw.js requests.
+let lastUpdateCheck = 0;
+const UPDATE_CHECK_MIN_INTERVAL_MS = 60_000;
+
 function maybeReload(): void {
   if (refreshing || !reloadPending || composerBusy) return;
   if (typeof window === 'undefined') return;
@@ -246,9 +252,29 @@ export function registerServiceWorker(buildId: string): void {
     reloadPending = true;
     maybeReload();
   });
-  navigator.serviceWorker.register(`/sw.js?v=${buildId}`).catch(() => {
-    /* registration failure is non-fatal; the app still works without the SW */
-  });
+  navigator.serviceWorker
+    .register(`/sw.js?v=${buildId}`)
+    .then((registration) => {
+      // This register() call runs ONCE, at mount. iOS freezes an installed
+      // standalone PWA and resumes it from a snapshot WITHOUT re-navigating, so
+      // on a home-screen install that mount may not happen again for days — and
+      // the app keeps running whatever bundle it was frozen with. Re-check on
+      // every foreground; if a new SW is found, the controllerchange path above
+      // applies it (composer-aware, loop-guarded).
+      if (typeof document === 'undefined') return;
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState !== 'visible') return;
+        const now = Date.now();
+        if (now - lastUpdateCheck < UPDATE_CHECK_MIN_INTERVAL_MS) return;
+        lastUpdateCheck = now;
+        registration.update().catch(() => {
+          /* offline or transient — the next resume tries again */
+        });
+      });
+    })
+    .catch(() => {
+      /* registration failure is non-fatal; the app still works without the SW */
+    });
 }
 ```
 
@@ -305,6 +331,34 @@ The full `install`/`activate` kill code lives as a copy-paste block in the `sw.j
 4. **Without re-adding**, reopen the installed PWA. The in-app build SHA should **flip to the new commit on its own**.
 
 If the SHA flips with no re-add, auto-update works and the manual ritual is dead for good.
+
+---
+
+## Related caveat — iOS freezes installed PWAs, so registration-at-mount is not enough
+
+`registerServiceWorker` is called from an app-start effect. On iOS, a home-screen install is **frozen and resumed from a snapshot without re-navigating**, so that effect can go days without running again. Everything in the mechanism above hangs off it — meaning an installed app can sit on a stale bundle indefinitely while every other device updates normally. Invariant 10 (the `visibilitychange` → `registration.update()` check) is what closes this.
+
+Two consequences worth internalizing:
+
+- **A frozen install cannot deliver its own fix.** Shipping the resume check does nothing for an app already frozen without it — the very mechanism needed to pick it up is the thing being shipped. Those users need **one** force-close-and-reopen (or one load in the browser). Budget for that when you add invariant 10 to an existing project, exactly as you budget the one manual re-add that plants the SW initially.
+- **"Is the user on new code?" is not answerable from the deploy.** A green deploy plus a flipped bundle hash proves the *server* changed. Only the in-app build stamp on that device proves the *client* did. This is the same lesson as the build-SHA stamp, but it bites hardest on iOS installs.
+
+*Origin: Windex, 2026-08-12. A player's sign-in failed silently in an installed PWA; the login screen's own gaps (no request timeout, no catch, feedback rendered below the fold) hid it, and a frozen install was the most consistent explanation for a request that never reached the server at all. Fixed in `e253e50`.*
+
+---
+
+## Related caveat — a standalone install and the browser have SEPARATE storage
+
+On iOS, a home-screen install and Safari are **different storage contexts**. `localStorage`, cookies, and therefore any persisted auth session are not shared. Signing in inside Safari leaves the installed app **still signed out**, and vice versa.
+
+This is expected platform behavior, not a bug — but it reliably reads as one, to users and to whoever is debugging:
+
+- A user who signs in via an emailed link or code (which opens in **Safari**), then opens the home-screen icon, finds themselves at the login screen and reasonably concludes sign-in "didn't work."
+- Single-use codes make it worse: the code was consumed by the Safari sign-in, so re-entering it in the installed app fails as already-used — which looks like an expiry bug and sends you investigating token lifetimes that are working perfectly.
+
+**How to apply:** for any invite/OTP flow on an installable PWA, expect every invitee to hit this once, and say so in the onboarding copy ("if you added Windex to your home screen, sign in there"). When triaging "my code didn't work," establish **which context** the user was in before touching tokens or templates — the request's `User-Agent` distinguishes them (a standalone install omits `Version/<n>` and `Safari/<n>`, which mobile Safari includes).
+
+*Origin: Windex, 2026-08-12. A player signed in successfully in Safari at 01:34Z, added the app to his home screen, and was met with a login screen; his reuse of the already-consumed code then failed as expired. Both behaviors were correct, and neither was what he'd been told to expect.*
 
 ---
 
